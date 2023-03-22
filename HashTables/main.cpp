@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 
+#define accuracy 0.5
+
 using namespace std;
 
 
@@ -12,10 +14,10 @@ struct info
 
 class Hash
 {
-//Описание одной записи
+//description one record of item
 private:
-    info data; //Информация о товаре
-    int status = 0; //Номер статуса
+    info data; // Item info
+    int status = 0; //Current status
 public:
     Hash(string itemName, unsigned long long int barCode)
     {
@@ -31,38 +33,109 @@ public:
     {
         return data;
     }
-    void setValues(Hash anotherHash)
+    int getStatus()
     {
-        data = anotherHash.getData();
+        return status;
+    }
+    void setValues(Hash *anotherHash)
+    {
+        data = anotherHash->getData();
         status = 1;
+    }
+    void setStatus(int newStatus)
+    {
+        status = newStatus;
     }
 };
 
 class HashTable
 {
-    //Описание таблицы из записей
+    //Description table of hashes
 private:
-    unsigned long long int currentSizeTable; //Текущий размер таблицы
-    unsigned long long int filledTable; //Заполненные ячейки таблицы
-    float filledPercentTable = filledTable/currentSizeTable; //Заполненные ячейки таблицы в процентах
+    unsigned long long int currentSizeTable;
+    unsigned long long int filledTable;
+    float filledPercentTable;
     unsigned long long int hashFunctionMain(unsigned long long int key);
     unsigned long long int hashFunctionCollision(int lastAdress, int tryNumber);
     void resizeTable(int N);
-    Hash *table;
 public:
-    HashTable (unsigned long long int N) {
-        Hash *table = new Hash[N];
-        currentSizeTable = N;
+    Hash *table;
+    HashTable(unsigned long long int N)
+    :currentSizeTable(N), filledTable(0), filledPercentTable(0.0)
+    {
+        table = new Hash[N];
     }
-     int addHash(Hash newHash);
-     int deleteHash(Hash delHash);
-     int searchHash(Hash findHash);
+    HashTable ()
+    {
+        table = new Hash[10];
+        currentSizeTable = 10;
+        filledTable = 0;
+        filledPercentTable = 0.0;
+    }
+    void addHash(Hash *newHash);
+    void expandTable();
+    int deleteHash(Hash delHash);
+    int searchHash(Hash findHash);
     void printHashTable();
-    ~HashTable();
+    unsigned long long int getTableSize();
+    void clearTable(Hash *table, unsigned long long int tableSize);
+
+    ~HashTable()
+    {
+        delete[] table;
+    }
 };
 
-unsigned long long int HashTable::hashFunctionMain(unsigned long long int key)
+unsigned long long int HashTable::getTableSize()
 {
+    return currentSizeTable;
+}
+
+void HashTable::clearTable(Hash *table, unsigned long long int tableSize)
+{
+    for(unsigned long long int i = 0; i < tableSize; i++)
+    {
+        table[i].setStatus(0);
+    }
+}
+
+void HashTable::expandTable()
+{ //РќРµРїСЂР°РІРёР»СЊРЅРѕ СЂР°Р±РѕС‚Р°РµС‚ РІ СЃР»СѓС‡Р°Рµ РєРѕР»Р»РёР·РёР№
+    Hash *table_save = new Hash[currentSizeTable];
+    for(unsigned long long int i = 0; i < currentSizeTable; i++)
+    {
+        table_save[i] = table[i];
+    }
+    table = new Hash[currentSizeTable*2];
+    clearTable(table, currentSizeTable);
+    int attempt;
+    unsigned long long int key_;
+    currentSizeTable *= 2;
+    for (unsigned long long int i = 0; i < currentSizeTable/2; i++)
+    { //РџСЂРѕР±Р»РµРјРєР° С‚СѓС‚
+        if (table_save[i].getStatus() != 0)
+        {
+            key_ = hashFunctionMain(table_save[i].getData().barcode);
+            if (table[key_].getStatus() == 0)
+            {
+                table[key_].setValues(&table_save[i]);
+            } else {
+                //РљРѕР»Р»РёР·РёСЏ
+                attempt = 0;
+                while (table[key_].getStatus() != 0)
+                {
+                    key_ = hashFunctionCollision(key_, attempt);
+                    attempt++;
+                }
+                table[key_].setValues(&table_save[i]);
+            }
+        }
+    }
+    delete[] table_save;
+}
+
+unsigned long long int HashTable::hashFunctionMain(unsigned long long int key)
+{ // Р’РµСЂРЅР°СЏ С„СѓРЅРєС†РёСЏ
     unsigned long long int sum = 0;
     for (key; key > 0; key /= 10)
     {
@@ -71,30 +144,77 @@ unsigned long long int HashTable::hashFunctionMain(unsigned long long int key)
     return (sum % currentSizeTable);
 }
 
-int HashTable::addHash(Hash newHash)
-{
-    table[0].setValues(newHash);
-    cout << "HEER!" << endl;
-    return 0;
+unsigned long long int HashTable::hashFunctionCollision(int lastAdress, int tryNumber)
+{ //РЎРєР°С‚Р°Р» Сѓ Р’РѕРІС‹, С…Р· РїСЂР°РІРёР»СЊРЅРѕ Р»Рё СЂР°Р±РѕС‚Р°РµС‚, РїРѕРєР° РЅРµРїРѕРЅСЏС‚РЅРѕ
+    return (lastAdress + tryNumber * tryNumber) % currentSizeTable;
+}
+
+
+void HashTable::addHash(Hash *newHash)
+{ //РќРµ СЂР°Р±РѕС‚Р°РµС‚
+    unsigned long long int key_ = hashFunctionMain(newHash->getData().barcode);
+    if (filledPercentTable > accuracy)
+        {
+            expandTable();
+        }
+    if (table[key_].getStatus() == 0)
+    {
+        table[key_].setValues(newHash); //status -->> 1, data -->> filling
+    } else {
+    //Full cell. Percentage test for fullfill of hashTable
+        int attempt = 0;
+        int startKey = key_;
+        bool startIn = false;
+        while (table[key_].getStatus() != 0)
+        {
+            key_ = hashFunctionCollision(key_, attempt);
+            attempt++;
+            if (startIn == false) startIn = true;
+        }
+        table[key_].setValues(newHash);
+    }
+    filledTable++;
+    filledPercentTable = (float)filledTable/(float)currentSizeTable;
 }
 
 void HashTable::printHashTable()
 {
-    for (unsigned long long int i = 0; i < currentSizeTable - 1; i++)
+    for (unsigned long long int i = 0; i < currentSizeTable; i++)
     {
-        cout << table->getData().TextName << ": " << table->getData().barcode << endl;
+        cout.width(5);
+        cout << i << "|";
+        cout.width(20);
+        cout << table[i].getData().TextName << "|";
+        cout.width(11);
+        cout << table[i].getData().barcode << endl;
+        cout.width(5);
     }
 }
-HashTable::~HashTable()
-{
-    free(table);
-}
+
 int main()
 {
+    cout.fill(' ');
     setlocale(LC_ALL, "rus");
-    Hash new_Hash("Ноутбук", 11111111111);
+    Hash *anotherHash = new Hash("Laptop", 11111111111); // РЎРѕР·РґР°Р»СЃСЏ РЅРѕСЂРјР°Р»СЊРЅРѕ
     HashTable HT(4);
-    HT.addHash(new_Hash);
+
+    Hash *anotherHash2 = new Hash("PC", 12222222222);
+    HT.addHash(anotherHash);
+    HT.addHash(anotherHash2);
+    Hash *an = new Hash("buububu", 0);
+    Hash *a = new Hash("ufufufuf", 5);
+    HT.addHash(a);
+    HT.addHash(an);
+    Hash *aa = new Hash("qwueqwe", 6);
+    HT.addHash(aa);
+    Hash *aaa = new Hash ("Abidabasdfadsfaida", 0);
+    HT.addHash(aaa);
+    Hash *b = new Hash("aba", 0);
+    Hash *bb = new Hash("abba", 0);
+    Hash *bbb = new Hash("abbba", 0);
+    HT.addHash(b);
+    HT.addHash(bb);
+    HT.addHash(bbb);
     HT.printHashTable();
     return 0;
 }
